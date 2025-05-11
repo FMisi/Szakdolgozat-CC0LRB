@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biztonsági Vizsgálati Eszköz</title>
+    <link rel="shortcut icon" href="static/favicon.ico" />
+    <link rel="stylesheet" type="text/css" href="static/stiluslap.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Biztonsági Vizsgálati Eszköz</h1>
+
+        <div class="input-group">
+            <label for="urlInput">Adjon meg egy URL-t a vizsgálathoz:</label>
+            <input type="text" id="urlInput" placeholder="https://pelda.com">
+        </div>
+
+        <div class="input-group">
+            <label for="modeSelect">Válasszon vizsgálati módot:</label>
+            <select id="modeSelect">
+                <option value="static">Statikus</option>
+                <option value="dynamic">Dinamikus</option>
+                <option value="llm">LLM</option>
+                <option value="all">Összes Eszköz</option>
+            </select>
+        </div>
+
+        <button onclick="scanWebsite()">Vizsgálat Indítása</button>
+        <button onclick="generateReport()">Jelentés Generálása</button>
+        <button onclick="downloadLog()">Log Letöltése</button>
+        <button onclick="downloadRawOutput()">Nyers Output Letöltése</button>
+
+        <div id="results" style="margin-top: 20px;"></div>
+    </div>
+
+    <script>
+        async function scanWebsite() {
+            const urlInput = document.getElementById('urlInput');
+            const modeSelect = document.getElementById('modeSelect');
+            const resultsDiv = document.getElementById('results');
+            const url = urlInput.value;
+            const mode = modeSelect.value;
+
+            resultsDiv.innerHTML = "Vizsgálat...";
+
+            try {
+                const response = await fetch('/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url, mode: mode })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    resultsDiv.innerHTML = `<pre>Hiba: ${JSON.stringify(errorData, null, 2)}</pre>`;
+                    return;
+                }
+
+                const data = await response.json();
+
+                let html = '<h3>Vizsgálati Eredmények</h3>';
+                if (data.scan_results) {
+                    for (const [tool, result] of Object.entries(data.scan_results)) {
+                        html += `<h4>${tool.toUpperCase()}</h4>`;
+                        html += `<pre>${JSON.stringify(result, null, 2).replace(/\\n/g, "\n")}</pre>`;
+                    }
+                }
+
+                resultsDiv.innerHTML = html;
+
+                localStorage.setItem('scanResults', JSON.stringify(data));
+            } catch (error) {
+                resultsDiv.innerHTML = `<pre>Hiba: ${error.message}</pre>`;
+            }
+        }
+
+        async function generateReport() {
+            const results = localStorage.getItem('scanResults');
+
+            if (!results) {
+                alert("Kérlek futtas egy vizsgálatot először!");
+                return;
+            }
+
+            try {
+                const response = await fetch('/generate_report', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: results
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    alert(`Jelentés generálása sikertelen: ${errorData.error}`);
+                    return;
+                }
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'scan_report.docx';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            } catch (error) {
+                alert(`Hiba: ${error.message}`);
+            }
+        }
+
+        async function downloadLog() {
+            try {
+                const response = await fetch('/download_log');
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'debug.log';
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                } else {
+                    alert('Log fájl nem elérhető.');
+                }
+            } catch (error) {
+                alert('Hiba a log letöltésekor: ' + error.message);
+            }
+        }
+
+        async function downloadRawOutput() {
+            const results = localStorage.getItem('scanResults');
+
+            if (!results) {
+                alert("Előbb futtass egy vizsgálatot!");
+                return;
+            }
+
+            try {
+                const response = await fetch('/download_raw_zip', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: results
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'raw_outputs.zip';
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                } else {
+                    alert('Nincs elérhető nyers output fájl, amit le lehetne tölteni.');
+                }
+            } catch (error) {
+                alert('Hiba a nyers output letöltésekor: ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html>

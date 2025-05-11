@@ -1,0 +1,36 @@
+rules:
+### 🛑 Cross-site scripting (XSS) – veszélyes innerHTML használat
+- id: xss-innerhtml
+  pattern: |
+    element.innerHTML = $VAR;
+  message: "⚠️ Potential XSS vulnerability: Avoid using `innerHTML` with dynamic content."
+  languages: [html, javascript]
+  severity: WARNING
+
+### 🛑 Cross-site request forgery (CSRF) – hiányzó token
+- id: missing-csrf-token
+  patterns:
+    - pattern: |
+        <form>
+          ...
+        </form>
+    - pattern-not: |
+        <form>
+          ...
+          <input type="hidden" name="csrf_token" ...>
+          ...
+        </form>
+  message: "⚠️ Form is missing CSRF protection (no CSRF token found)."
+  languages: [html]
+  severity: WARNING
+
+
+### 🛑 JWT – Hardcoded secrets in tokens
+- id: hardcoded-jwt-secret
+  pattern: |
+    eyJ
+  message: "⚠️ Hardcoded JWT secret found!"
+  languages: [javascript]
+  severity: WARNING
+
+
