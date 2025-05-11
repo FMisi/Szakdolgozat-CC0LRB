@@ -16,6 +16,8 @@ app = Flask(__name__)
 
 DEBUG = True
 
+current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
+
 def initialize_log():
     with open("debug.log", "w") as log_file:
         pass
@@ -24,7 +26,7 @@ def log_debug_message(message):
     if DEBUG:
         with open("debug.log", "a") as log_file:
             log_file.write(message + "\n")
-#region
+
 @app.route('/')
 def home():
     return open("templates/index.html").read()
@@ -36,37 +38,41 @@ def scan():
     mode = data.get("mode", "static")
 
     if not url:
-        return jsonify({"hiba": "Nem adtál meg URL-t!"}), 400
+        return jsonify({"error": "Nem adtál meg URL-t!"}), 400
 
     headers = {'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:136.0) Gecko/20100101 Firefox/136.0'}
-    headers_str = f"{headers['User-Agent']}"
+    headers_str = headers['User-Agent']
     
-    # HTML letöltése egyszer, és használjuk az eszközök számára
-    content = download_html(url, headers)
-    if "error" in content:
-        return jsonify(content), 500
-#endregion
+    # HTML letöltés
+    html_result = download_html(url, headers)
+    if not html_result.get("success"):
+        return jsonify({"error": html_result.get("error", "Ismeretlen hiba")}), 500
+
+    response_headers = html_result["headers"]
+    response_body = html_result["body"]
+    full_content = str(response_headers) + "\n\n" + response_body
+
     log_debug_message(f"[{datetime.now().strftime('%Y-%m-%d %H:%M')}] URL: {url} átadásra került a {mode.upper()} módban")
 
-    # Eredmények az eszközök futtatása alapján
+    # Eredmények
     scan_results = {}
 
     if mode == "static":
-        scan_results["semgrep"] = run_semgrep(content)
+        scan_results["semgrep"] = run_semgrep(full_content)
     elif mode == "dynamic":
         scan_results["nikto"] = run_nikto(url)
         scan_results["arachni"] = run_arachni(url, headers_str)
         scan_results["wapiti"] = run_wapiti(url)
     elif mode == "llm":
-        scan_results["llm"] = run_llm(content)
+        scan_results["llm"] = run_llm(response_headers)
     elif mode == "all":
-        scan_results["semgrep"] = run_semgrep(content)
+        scan_results["semgrep"] = run_semgrep(full_content)
         scan_results["nikto"] = run_nikto(url)
         scan_results["arachni"] = run_arachni(url, headers_str)
         scan_results["wapiti"] = run_wapiti(url)
-        scan_results["llm"] = run_llm(content)
+        scan_results["llm"] = run_llm(response_headers)
     else:
-        return jsonify({"hiba": f"Ismeretlen mód: {mode}"}), 400
+        return jsonify({"error": f"Ismeretlen mód: {mode}"}), 400
 
     combined_results = {
         "url": url,
@@ -80,19 +86,23 @@ def download_html(url, headers):
     try:
         print(f"Letöltjük a HTML-t az URL-ről: {url}...")
 
-        # HTTP kérés a megadott URL-re, fejlécekkel
         response = requests.get(url, headers=headers)
 
         if response.status_code == 200:
             print("HTML tartalom sikeresen letöltve.")
-            return str(response.headers)+"\n\n"+str(response.text)  # Visszaadjuk a letöltött HTML tartalmat
+            return {
+                "success": True,
+                "headers": dict(response.headers),
+                "body": response.text
+            }
         else:
             print(f"Nem sikerült letölteni a tartalmat. HTTP status: {response.status_code}")
-            return {"hiba": f"Nem sikerült letölteni a tartalmat. HTTP status: {response.status_code}"}
+            return {"success": False, "error": f"Nem sikerült letölteni a tartalmat. HTTP status: {response.status_code}"}
 
     except requests.RequestException as e:
         print(f"Hiba történt a letöltés során: {e}")
-        return {"hiba": f"Hiba történt a letöltés során: {str(e)}"}
+        return {"success": False, "error": f"Hiba történt a letöltés során: {str(e)}"}
+
 
 #region run_semgrep
 def run_semgrep(code):
@@ -152,15 +162,12 @@ def run_nikto(url):
 #endregion
 
 #region run_llm
-def run_llm(response):
+def run_llm(headers):
     try:
         print("Running LLM analysis with DeepSeek...")
 
-        # Header -ök kivonata a válaszból
-        headers = dict(response.headers)
         headers_str = json.dumps(headers, indent=2)
 
-        # Prompt megadása a DeepSeek-nek az elemzéshez
         prompt = (
             "You are a security expert analyzing HTTP response headers. Below is a JSON representation of the headers from a web request:\n\n"
             f"{headers_str}\n\n"
@@ -172,26 +179,23 @@ def run_llm(response):
             "Provide your response in a clear, concise manner."
         )
 
-        # A DeepSeek API függvény hívása a prompttal
         llm_response = get_deepseek_valasz(prompt)
 
-        # A nyers LLM válasz naplózása debug -oláshoz
         log_debug_message(f"[{datetime.now().strftime('%Y-%m-%d %H:%M')}] Raw LLM response: '{llm_response}'")
 
         if not llm_response or llm_response.strip() == "":
             return {
                 "message": "LLM analysis failed",
-                "hiba": "Empty response from DeepSeek API",
+                "error": "Empty response from DeepSeek API",
                 "headers_analyzed": headers
             }
         elif llm_response.startswith("Error:") or llm_response.startswith("Exception:"):
             return {
                 "message": "LLM analysis failed",
-                "hiba": f"DeepSeek API error: {llm_response}",
+                "error": f"DeepSeek API error: {llm_response}",
                 "headers_analyzed": headers
             }
 
-        # Az LLM elemzésével visszatérés
         return {
             "message": "LLM analysis completed",
             "llm_response": llm_response,
@@ -200,13 +204,14 @@ def run_llm(response):
 
     except Exception as e:
         log_debug_message(f"[{datetime.now().strftime('%Y-%m-%d %H:%M')}] Exception in run_llm: {str(e)}")
-        return {"hiba": f"Unexpected error in LLM analysis: {str(e)}", "headers_analyzed": headers}
+        return {"error": f"Unexpected error in LLM analysis: {str(e)}", "headers_analyzed": headers}
+
 
 def get_deepseek_valasz(prompt):
     API_KEY = "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"
     if not API_KEY:
         log_debug_message(f"[{datetime.now().strftime('%Y-%m-%d %H:%M')}] API key not set")
-        return "Hiba: API key not set"
+        return "Error: API key not set"
 
     ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
     HEADERS = {
