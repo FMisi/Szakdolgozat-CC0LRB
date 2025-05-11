@@ -88,11 +88,11 @@ def download_html(url, headers):
             return str(response.headers)+"\n\n"+str(response.text)  # Visszaadjuk a letöltött HTML tartalmat
         else:
             print(f"Nem sikerült letölteni a tartalmat. HTTP status: {response.status_code}")
-            return {"error": f"Nem sikerült letölteni a tartalmat. HTTP status: {response.status_code}"}
+            return {"hiba": f"Nem sikerült letölteni a tartalmat. HTTP status: {response.status_code}"}
 
     except requests.RequestException as e:
         print(f"Hiba történt a letöltés során: {e}")
-        return {"error": f"Hiba történt a letöltés során: {str(e)}"}
+        return {"hiba": f"Hiba történt a letöltés során: {str(e)}"}
 
 #region run_semgrep
 def run_semgrep(code):
@@ -181,13 +181,13 @@ def run_llm(response):
         if not llm_response or llm_response.strip() == "":
             return {
                 "message": "LLM analysis failed",
-                "error": "Empty response from DeepSeek API",
+                "hiba": "Empty response from DeepSeek API",
                 "headers_analyzed": headers
             }
         elif llm_response.startswith("Error:") or llm_response.startswith("Exception:"):
             return {
                 "message": "LLM analysis failed",
-                "error": f"DeepSeek API error: {llm_response}",
+                "hiba": f"DeepSeek API error: {llm_response}",
                 "headers_analyzed": headers
             }
 
@@ -200,13 +200,13 @@ def run_llm(response):
 
     except Exception as e:
         log_debug_message(f"[{datetime.now().strftime('%Y-%m-%d %H:%M')}] Exception in run_llm: {str(e)}")
-        return {"error": f"Unexpected error in LLM analysis: {str(e)}", "headers_analyzed": headers}
+        return {"hiba": f"Unexpected error in LLM analysis: {str(e)}", "headers_analyzed": headers}
 
 def get_deepseek_valasz(prompt):
     API_KEY = "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"
     if not API_KEY:
         log_debug_message(f"[{datetime.now().strftime('%Y-%m-%d %H:%M')}] API key not set")
-        return "Error: API key not set"
+        return "Hiba: API key not set"
 
     ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
     HEADERS = {
